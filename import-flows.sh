@@ -10,7 +10,10 @@
 #   x-instance-api-key: <your_api_key>
 #
 # Usage:
-#   bash import-flows.sh [zip-directory]
+#   bash import-flows.sh [OPTIONS] [zip-directory]
+#
+# Options:
+#   --verbose   Show full curl request/response details for each import
 #
 # If no directory is supplied the script looks in the current working directory.
 #
@@ -20,6 +23,29 @@
 # =============================================================================
 
 set -euo pipefail
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+VERBOSE=false
+POSITIONAL_ARGS=()
+
+for arg in "$@"; do
+    case "${arg}" in
+        --verbose|-v)
+            VERBOSE=true
+            ;;
+        --help|-h)
+            echo "Usage: bash import-flows.sh [--verbose] [zip-directory]"
+            echo ""
+            echo "Options:"
+            echo "  --verbose, -v   Show full curl request/response details for each import"
+            echo "  --help,    -h   Show this help message"
+            exit 0
+            ;;
+        *)
+            POSITIONAL_ARGS+=("${arg}")
+            ;;
+    esac
+done
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 GREEN="\033[0;32m"
@@ -33,7 +59,9 @@ info()    { echo -e "${CYAN}[INFO]${RESET}    $*"; }
 success() { echo -e "${GREEN}[OK]${RESET}      $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${RESET}    $*"; }
 error()   { echo -e "${RED}[ERROR]${RESET}   $*" >&2; }
-divider() { echo -e "${BOLD}──────────────────────────────────────────────────${RESET}"; }
+MAGENTA="\033[0;35m"
+divider()  { echo -e "${BOLD}──────────────────────────────────────────────────${RESET}"; }
+verbose()  { if [ "${VERBOSE}" = true ]; then echo -e "${MAGENTA}[VERBOSE]${RESET} $*"; fi; }
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
@@ -67,7 +95,7 @@ fi
 echo ""
 
 # ── Locate zip files ──────────────────────────────────────────────────────────
-ZIP_DIR="${1:-.}"
+ZIP_DIR="${POSITIONAL_ARGS[0]:-.}"
 
 if [ ! -d "${ZIP_DIR}" ]; then
     error "Directory not found: ${ZIP_DIR}"
@@ -139,6 +167,7 @@ info "Tenant   : ${BOLD}https://${TENANT_HOST}${RESET}"
 info "Project  : ${BOLD}${PROJECT_NAME}${RESET}"
 info "Endpoint : ${BOLD}${BASE_URL}${RESET}"
 info "Auth     : ${BOLD}x-instance-api-key${RESET} (Instance API Key)"
+info "Verbose  : ${BOLD}${VERBOSE}${RESET}"
 echo ""
 
 # Confirm before proceeding
@@ -162,23 +191,60 @@ FAIL_LIST=()
 
 for ZIP_FILE in "${ZIP_FILES[@]}"; do
     BASENAME="$(basename "${ZIP_FILE}")"
-    echo -e "  ${BOLD}→ Importing:${RESET} ${BASENAME}"
+    ZIP_SIZE=$(du -sh "${ZIP_FILE}" | cut -f1)
+    echo -e "  ${BOLD}→ Importing:${RESET} ${BASENAME} (${ZIP_SIZE})"
 
-    # POST the zip as multipart/form-data field 'recipe'
-    # Capture body + HTTP status code on last line
-    HTTP_RESPONSE=$(
-        curl -s -w "\n%{http_code}" \
-            -X POST "${BASE_URL}" \
-            -H "x-instance-api-key: ${API_KEY}" \
-            -H "Accept: application/json" \
-            -F "recipe=@${ZIP_FILE};type=application/zip" \
-            2>/dev/null
-    )
+    if [ "${VERBOSE}" = true ]; then
+        verbose "Full path  : ${ZIP_FILE}"
+        verbose "Target URL : POST ${BASE_URL}"
+        verbose "Headers    : x-instance-api-key: <redacted>  Accept: application/json"
+        verbose "Body field : recipe=@${ZIP_FILE} (type=application/zip)"
+        echo ""
+    fi
+
+    # POST the zip as multipart/form-data field 'recipe'.
+    # In verbose mode use curl's own --verbose output (stderr) and capture it.
+    # In normal mode suppress all curl noise.
+    if [ "${VERBOSE}" = true ]; then
+        # Write curl verbose stderr to a temp file so we can print it cleanly
+        CURL_VERBOSE_LOG=$(mktemp)
+        HTTP_RESPONSE=$(
+            curl -s -w "\n%{http_code}" \
+                --verbose \
+                -X POST "${BASE_URL}" \
+                -H "x-instance-api-key: ${API_KEY}" \
+                -H "Accept: application/json" \
+                -F "recipe=@${ZIP_FILE};type=application/zip" \
+                2>"${CURL_VERBOSE_LOG}"
+        )
+        echo -e "${MAGENTA}[VERBOSE] curl trace:${RESET}"
+        # Redact the API key value from the trace before printing
+        sed "s/${API_KEY}/<redacted>/g" "${CURL_VERBOSE_LOG}" \
+            | sed 's/^/          /' \
+            | grep -v "^$" || true
+        rm -f "${CURL_VERBOSE_LOG}"
+        echo ""
+    else
+        HTTP_RESPONSE=$(
+            curl -s -w "\n%{http_code}" \
+                -X POST "${BASE_URL}" \
+                -H "x-instance-api-key: ${API_KEY}" \
+                -H "Accept: application/json" \
+                -F "recipe=@${ZIP_FILE};type=application/zip" \
+                2>/dev/null
+        )
+    fi
 
     HTTP_BODY=$(echo "${HTTP_RESPONSE}" | head -n -1)
     HTTP_CODE=$(echo "${HTTP_RESPONSE}" | tail -n 1)
 
     echo -e "    ${CYAN}HTTP status:${RESET} ${HTTP_CODE}"
+
+    if [ "${VERBOSE}" = true ]; then
+        verbose "Raw response body:"
+        echo "${HTTP_BODY}" | sed 's/^/          /' || true
+        echo ""
+    fi
 
     if [[ "${HTTP_CODE}" =~ ^2 ]]; then
         success "Import succeeded: ${BASENAME}"
