@@ -83,11 +83,25 @@ else
     error "Please check the above and try again, or ask your lab instructor for help."
     exit 1
 fi
+# ── Create API Studio project directory based on hostname ────────────────────
+USERNAME=$(whoami)
+API_STUDIO_DIR="${USERNAME}_APIStudioProject"
+
+#HOSTNAME_SHORT=$(hostname -s)
+#API_STUDIO_DIR="${HOSTNAME_SHORT}_APIStudioProject"
+ 
+info "Creating API Studio project directory: ${API_STUDIO_DIR}"
+ 
+mkdir -p "${TARGET_DIR}/${API_STUDIO_DIR}"
+ 
+success "Created: ${TARGET_DIR}/${API_STUDIO_DIR}"
+
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}------------------------------------------------------------${RESET}"
 success "All done! Your lab files are in: ${BOLD}$(pwd)/${TARGET_DIR}${RESET}"
+info "API Studio project folder: ${CYAN}${API_STUDIO_DIR}${RESET}"
 echo ""
 info "Next steps:"
 echo -e "  1.  ${CYAN}cd ${TARGET_DIR}${RESET}   — move into your new lab folder"

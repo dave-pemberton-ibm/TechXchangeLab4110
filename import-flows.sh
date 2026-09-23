@@ -13,9 +13,17 @@
 #   bash import-flows.sh [OPTIONS] [zip-directory]
 #
 # Options:
-#   --verbose   Show full curl request/response details for each import
+#   -t, --tenant   <hostname>   Tenant hostname (default: dev3048403.a-vir-r1.int.ipaas.automation.ibm.com)
+#   -p, --project  <name>       Project name to import into (required)
+#   -k, --key      <api-key>    Instance API Key (required, or set WM_API_KEY env var)
+#   -v, --verbose               Show full curl request/response details for each import
+#   -h, --help                  Show this help message
 #
 # If no directory is supplied the script looks in the current working directory.
+#
+# Environment variables:
+#   WM_API_KEY   Instance API Key
+#   WM_TENANT    Tenant hostname override
 #
 # Docs:
 #   Auth   : https://www.ibm.com/docs/en/wm-integration-ipaas?topic=reference-authenticating-api-requests
@@ -24,25 +32,51 @@
 
 set -euo pipefail
 
-# ── Argument parsing ──────────────────────────────────────────────────────────
+# ── Defaults ──────────────────────────────────────────────────────────────────
+DEFAULT_TENANT="dev3048403.a-vir-r1.int.ipaas.automation.ibm.com"
+
+TENANT_HOST="${WM_TENANT:-${DEFAULT_TENANT}}"
+API_KEY="${WM_API_KEY:-}"
+PROJECT_NAME=""
 VERBOSE=false
 POSITIONAL_ARGS=()
 
-for arg in "$@"; do
-    case "${arg}" in
-        --verbose|-v)
-            VERBOSE=true
+# ── Argument parsing ──────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -t|--tenant)
+            TENANT_HOST="${2:-}"
+            shift 2
             ;;
-        --help|-h)
-            echo "Usage: bash import-flows.sh [--verbose] [zip-directory]"
+        -p|--project)
+            PROJECT_NAME="${2:-}"
+            shift 2
+            ;;
+        -k|--key)
+            API_KEY="${2:-}"
+            shift 2
+            ;;
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -h|--help)
+            echo ""
+            echo "Usage: bash import-flows.sh [OPTIONS] [zip-directory]"
             echo ""
             echo "Options:"
-            echo "  --verbose, -v   Show full curl request/response details for each import"
-            echo "  --help,    -h   Show this help message"
+            echo "  -t, --tenant   <hostname>   Tenant hostname"
+            echo "                              (default: ${DEFAULT_TENANT})"
+            echo "  -p, --project  <name>       Project name to import into"
+            echo "  -k, --key      <api-key>    Instance API Key (or set WM_API_KEY)"
+            echo "  -v, --verbose               Show full curl request/response details"
+            echo "  -h, --help                  Show this help message"
+            echo ""
             exit 0
             ;;
         *)
-            POSITIONAL_ARGS+=("${arg}")
+            POSITIONAL_ARGS+=("${arg:-$1}")
+            shift
             ;;
     esac
 done
@@ -120,40 +154,43 @@ for f in "${ZIP_FILES[@]}"; do
 done
 echo ""
 
-# ── Interactive prompts ───────────────────────────────────────────────────────
+# ── Interactive prompts (for any missing required values) ─────────────────────
 divider
 echo ""
 echo -e "${BOLD}  Connection details${RESET}"
 echo ""
 
-# Tenant hostname
-read -rp "$(echo -e "  ${CYAN}Tenant hostname${RESET} (e.g. myorg.int-aws-us.webmethods.io): ")" TENANT_HOST
+# Tenant hostname — show default and allow override
+echo -e "  ${CYAN}Tenant hostname${RESET} (press Enter to use default):"
+echo -e "  ${YELLOW}Default: ${DEFAULT_TENANT}${RESET}"
+read -rp "  > " TENANT_INPUT
+if [[ -n "${TENANT_INPUT}" ]]; then
+    TENANT_HOST="${TENANT_INPUT}"
+fi
 TENANT_HOST="${TENANT_HOST%/}"   # strip any trailing slash
+echo ""
 
-if [[ -z "${TENANT_HOST}" ]]; then
-    error "Tenant hostname cannot be empty."
-    exit 1
-fi
-
-# Project name
-read -rp "$(echo -e "  ${CYAN}Project name${RESET}   (exact name of the target project): ")" PROJECT_NAME
-
+# Project name (prompt only if not supplied via flag)
 if [[ -z "${PROJECT_NAME}" ]]; then
-    error "Project name cannot be empty."
-    exit 1
+    read -rp "$(echo -e "  ${CYAN}Project name${RESET}   (exact name of the target project): ")" PROJECT_NAME
+    if [[ -z "${PROJECT_NAME}" ]]; then
+        error "Project name cannot be empty."
+        exit 1
+    fi
 fi
 
-# Instance API Key
-echo ""
-echo -e "  ${YELLOW}You need a personal Instance API Key from the IBM SaaS Console.${RESET}"
-echo -e "  ${YELLOW}Go to: Access Management → Service IDs → API Keys${RESET}"
-echo ""
-read -rsp "$(echo -e "  ${CYAN}Instance API Key${RESET} (input hidden): ")" API_KEY
-echo ""
-
+# Instance API Key (prompt only if not supplied via flag or env var)
 if [[ -z "${API_KEY}" ]]; then
-    error "API key cannot be empty."
-    exit 1
+    echo ""
+    echo -e "  ${YELLOW}You need a personal Instance API Key from the IBM SaaS Console.${RESET}"
+    echo -e "  ${YELLOW}Go to: Access Management → Service IDs → API Keys${RESET}"
+    echo ""
+    read -rsp "$(echo -e "  ${CYAN}Instance API Key${RESET} (input hidden): ")" API_KEY
+    echo ""
+    if [[ -z "${API_KEY}" ]]; then
+        error "API key cannot be empty."
+        exit 1
+    fi
 fi
 
 echo ""
