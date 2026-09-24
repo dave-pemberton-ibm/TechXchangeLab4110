@@ -6,9 +6,10 @@
 #   2. Creates the project using create-project.sh
 #   3. Imports all Flow/DAF zip archives using import-flows.sh
 #   4. Syncs the vault variable(s) using sync-vault-variables.sh
+#   5. Customizes OpenAPI spec (STUDENTID -> username) via customize-api-spec.sh
 #
 # Usage:
-#   bash setup-project.sh [OPTIONS] [zip-directory]
+#   bash setup-project.sh [OPTIONS] [zip-directory] (default: ./integrations/)
 #
 # Options:
 #   -p, --project      <name>       Project name (default: <linux_username>_YYYYMMDD)
@@ -36,6 +37,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_TENANT="dev3048403.a-vir-r1.int.ipaas.automation.ibm.com"
 DEFAULT_ENV_FILE="${SCRIPT_DIR}/apikey.env"
 DEFAULT_VAR_NAME="DP_CruiseLine_APIKey"
+DEFAULT_ZIP_DIR="${SCRIPT_DIR}/integrations"
 
 # Default project name: <linux_username>_YYYYMMDD
 CURRENT_USER="$(whoami 2>/dev/null || echo "${USER:-user}")"
@@ -86,6 +88,10 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Usage: bash setup-project.sh [OPTIONS] [zip-directory]"
             echo ""
+            echo "Positional Arguments:"
+            echo "  [zip-directory]             Directory with flow .zip files"
+            echo "                              (default: ./integrations/)"
+            echo ""
             echo "Options:"
             echo "  -p, --project      <name>       Project name"
             echo "                                  (default: ${DEFAULT_PROJECT_NAME})"
@@ -135,9 +141,10 @@ if [ -z "${VAR_NAME}" ]; then
     VAR_NAME="${DEFAULT_VAR_NAME}"
 fi
 
-ZIP_DIR="${POSITIONAL_ARGS[0]:-.}"
+ZIP_DIR="${POSITIONAL_ARGS[0]:-${DEFAULT_ZIP_DIR}}"
 if [ ! -d "${ZIP_DIR}" ]; then
     error "Flow zip directory not found: ${ZIP_DIR}"
+    echo "Please make sure '${ZIP_DIR}' exists or provide a directory path." >&2
     exit 1
 fi
 
@@ -207,6 +214,20 @@ if ! bash "${SCRIPT_DIR}/sync-vault-variables.sh" "${SYNC_FLAGS[@]}"; then
     exit 1
 fi
 success "Vault variable '${VAR_NAME}' synchronized successfully."
+
+# ── Step 5: Customize API Spec ────────────────────────────────────────────────
+step "5" "Customize API Specification (replace STUDENTID with '${CURRENT_USER}')"
+
+SPEC_TEMPLATE="${SCRIPT_DIR}/STUDENTID_CruiseAPI-oas3.json"
+if [ -f "${SPEC_TEMPLATE}" ]; then
+    if ! bash "${SCRIPT_DIR}/customize-api-spec.sh" -u "${CURRENT_USER}" -f "${SPEC_TEMPLATE}"; then
+        error "Step 5 failed: Unable to customize OpenAPI spec file."
+        exit 1
+    fi
+    success "API specification customized successfully."
+else
+    warn "Template '${SPEC_TEMPLATE}' not found; skipping Step 5."
+fi
 
 # ── Completion ────────────────────────────────────────────────────────────────
 divider
