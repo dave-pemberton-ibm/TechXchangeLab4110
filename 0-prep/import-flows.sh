@@ -39,6 +39,7 @@ TENANT_HOST="${WM_TENANT:-${DEFAULT_TENANT}}"
 API_KEY="${WM_API_KEY:-}"
 PROJECT_NAME=""
 VERBOSE=false
+AUTO_CONFIRM=false
 POSITIONAL_ARGS=()
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
@@ -56,6 +57,10 @@ while [[ $# -gt 0 ]]; do
             API_KEY="${2:-}"
             shift 2
             ;;
+        -y|--yes)
+            AUTO_CONFIRM=true
+            shift
+            ;;
         -v|--verbose)
             VERBOSE=true
             shift
@@ -69,6 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "                              (default: ${DEFAULT_TENANT})"
             echo "  -p, --project  <name>       Project name to import into"
             echo "  -k, --key      <api-key>    Instance API Key (or set WM_API_KEY)"
+            echo "  -y, --yes                   Skip interactive confirmation prompt"
             echo "  -v, --verbose               Show full curl request/response details"
             echo "  -h, --help                  Show this help message"
             echo ""
@@ -208,12 +214,14 @@ info "Verbose  : ${BOLD}${VERBOSE}${RESET}"
 echo ""
 
 # Confirm before proceeding
-read -rp "$(echo -e "  ${YELLOW}Proceed? Existing flow services with the same name will be overwritten. [y/N]: ${RESET}")" CONFIRM
-echo ""
+if [ "${AUTO_CONFIRM}" != true ]; then
+    read -rp "$(echo -e "  ${YELLOW}Proceed? Existing flow services with the same name will be overwritten. [y/N]: ${RESET}")" CONFIRM
+    echo ""
 
-if [[ ! "${CONFIRM}" =~ ^[Yy]$ ]]; then
-    warn "Import cancelled by user."
-    exit 0
+    if [[ ! "${CONFIRM}" =~ ^[Yy]$ ]]; then
+        warn "Import cancelled by user."
+        exit 0
+    fi
 fi
 
 # ── Import loop ───────────────────────────────────────────────────────────────
