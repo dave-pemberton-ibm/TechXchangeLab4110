@@ -89,11 +89,11 @@ API_STUDIO_DIR="${USERNAME}_APIStudioProject"
 
 #HOSTNAME_SHORT=$(hostname -s)
 #API_STUDIO_DIR="${HOSTNAME_SHORT}_APIStudioProject"
- 
+
 info "Creating API Studio project directory: ${API_STUDIO_DIR}"
- 
+
 mkdir -p "${TARGET_DIR}/${API_STUDIO_DIR}"
- 
+
 success "Created: ${TARGET_DIR}/${API_STUDIO_DIR}"
 
 
